@@ -206,8 +206,8 @@ class OM_DVGEOCOMP(om.ExplicitComponent):
         else:
             self.add_output(name, distributed=True, shape=(0,))
 
-    def nom_addThicknessConstraints1D(self, name, ptList, nCon, axis):
-        self.DVCon.addThicknessConstraints1D(ptList, nCon, axis, name=name)
+    def nom_addThicknessConstraints1D(self, name, ptList, nCon, axis, scaled=True):
+        self.DVCon.addThicknessConstraints1D(ptList, nCon, axis, name=name, scaled=scaled)
         comm = self.comm
         if comm.rank == 0:
             self.add_output(name, distributed=True, val=np.ones(nCon), shape=nCon)
