@@ -1165,6 +1165,7 @@ class DVGeometry(BaseDVGeometry):
         orient0=None,
         orient2="svd",
         config=None,
+        interpPts=None,
     ):
         """
         Add one or more section local design variables to the DVGeometry
@@ -1366,7 +1367,7 @@ class DVGeometry(BaseDVGeometry):
                 self.sectionFrame(secIndex[i], secTransform, secLink, iVol, orient2=orient2)
 
         self.DV_listSectionLocal[dvName] = geoDVSectionLocal(
-            dvName, lower, upper, scale, axis, ind, self.masks, config, secTransform, secLink
+            dvName, lower, upper, scale, axis, ind, self.masks, config, secTransform, secLink, interpPts
         )
 
         return self.DV_listSectionLocal[dvName].nVal
