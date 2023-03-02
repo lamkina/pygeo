@@ -212,7 +212,7 @@ class geoDVSpanwiseLocal(geoDV):
 
 
 class geoDVSectionLocal(geoDV):
-    def __init__(self, name, lower, upper, scale, axis, coefListIn, mask, config, sectionTransform, sectionLink, interpPts):
+    def __init__(self, name, lower, upper, scale, axis, coefListIn, mask, config, sectionTransform, sectionLink, interpPts, normals, centers):
         """
         Create a set of geometric design variables which change the shape
         of a surface.
@@ -234,6 +234,9 @@ class geoDVSectionLocal(geoDV):
 
         self.axis = axis
         self.interpPts = interpPts
+
+        self.normals = normals
+        self.centers = centers
 
     def __call__(self, coef, coefRotM, config):
         """
@@ -281,6 +284,9 @@ class geoDVSectionLocal(geoDV):
                         R = coefRotM[idx]
                         coef[idx] += R.dot(T.dot(inFrame)).imag * 1j
         return coef
+
+    def getSectionPlanes(self):
+        return self.normals, self.centers
 
     def mapIndexSets(self, indSetA, indSetB):
         """
