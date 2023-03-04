@@ -172,6 +172,7 @@ class DVGeometry(BaseDVGeometry):
         # Jacobians:
         self.JT = {}
         self.nPts = {}
+        self.JTempUpdated = False
 
         # dictionary to save any coordinate transformations we are given
         self.coordXfer = {}
@@ -1602,6 +1603,9 @@ class DVGeometry(BaseDVGeometry):
         for pointSet in self.updated:
             self.updated[pointSet] = False
 
+        # also flag the JTemp as out of date
+        self.JTempUpdated = False
+
         # Now call setValues on the children. This way the
         # variables will be set on the children
         for child in self.children:
@@ -2426,6 +2430,10 @@ class DVGeometry(BaseDVGeometry):
         """
         return J_temp for a given config
         """
+        # if J_Temp is not out of date, return immediately
+        if self.JTempUpdated:
+            return self.J_temp
+
         # These routines are not recursive. They compute the derivatives at this level and
         # pass information down one level for the next pass call from the routine above
 
@@ -2475,6 +2483,8 @@ class DVGeometry(BaseDVGeometry):
             else:
                 J_temp += J_casc
 
+        self.J_temp = J_temp
+        self.JTempUpdated = True
         return J_temp
 
     def computeTotalJacobian(self, ptSetName, config=None):
