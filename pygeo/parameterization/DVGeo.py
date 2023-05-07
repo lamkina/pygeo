@@ -3344,7 +3344,7 @@ class DVGeometry(BaseDVGeometry):
                     tmpIDs, tmpS0 = self.refAxis.projectRays(
                         curPts, axis, curves=[curveID], raySize=self.axis[key]["raySize"]
                     )
-                elif self.axis[key]["axis"] == "svd":
+                elif isinstance(self.axis[key]["axis"], str) and self.axis[key]["axis"] == "svd":
                     # we will do an SVD. use the dv name provided for the rotAxisVar
                     varname = self.axis[key]["rotAxisVar"]
                     slVar = self.DV_listSectionLocal[varname]
