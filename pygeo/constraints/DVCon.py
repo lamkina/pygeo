@@ -19,7 +19,7 @@ from .gearPostConstraint import GearPostConstraint
 from .locationConstraint import LocationConstraint
 from .planarityConstraint import PlanarityConstraint
 from .radiusConstraint import RadiusConstraint
-from .thicknessConstraint import ThicknessConstraint, ThicknessToChordConstraint
+from .thicknessConstraint import KSMaxThicknessToChordConstraint, ThicknessConstraint, ThicknessToChordConstraint
 from .volumeConstraint import CompositeVolumeConstraint, TriangulatedVolumeConstraint, VolumeConstraint
 
 
@@ -1264,7 +1264,7 @@ class DVConstraints:
 
         chordDir : list or array or length 3
             The direction defining "chord". This will typically be the
-            xasis ([1,0,0]). The magnitude of the vector doesn't
+            xaxis ([1,0,0]). The magnitude of the vector doesn't
             matter.
 
         lower : float or array of size nCon
@@ -3203,6 +3203,102 @@ class DVConstraints:
             upper=None,
             DVGeo=DVGeo,
             config=config,
+        )
+
+    def addKSMaxThicknessToChordConstraint(
+        self,
+        lePtList,
+        tePtList,
+        nCon,
+        axis,
+        rho=100.0,
+        lower=1.0,
+        upper=3.0,
+        scale=1.0,
+        scaled=False,
+        name=None,
+        addToPyOpt=True,
+        surfaceName="default",
+        DVGeoName="default",
+        compNames=None,
+    ):
+        self._checkDVGeo(DVGeoName)
+
+        p0, p1, p2 = self._getSurfaceVertices(surfaceName=surfaceName)
+
+        # Check the input point lists
+        if len(lePtList) != len(tePtList):
+            raise Error(
+                "LE and TE point lists must be the same length. "
+                f"TE length: {len(tePtList)}, LE length: {len(lePtList)}"
+            )
+
+        # Check the axis type and length
+        const_axis = True
+        if isinstance(axis, (list, np.ndarray)):
+            if isinstance(axis[0], (float, int)):
+                if len(axis) != 3:
+                    raise ValueError("Constant axis for all points must have a length of 3 for x, y, and z directions.")
+            elif isinstance(axis[0], (list, np.ndarray)):
+                const_axis = False
+                if any(not isinstance(a, (float, int)) for a in axis[0]):
+                    raise ValueError(
+                        "If providing an axis for multiple constraint lines, 'axis' must be "
+                        "2-dimensional with shape nLePts x 3."
+                    )
+                if len(axis) != len(lePtList):
+                    raise ValueError(
+                        "Separate axis for each constraint line detected, but length of 'axis' "
+                        "is different than length of 'lePtList'."
+                    )
+            else:
+                raise TypeError("Invalid format for 'axis'.")
+        else:
+            raise TypeError(
+                "Argument 'axis' must be a single list or array representing a constant axis or multiple " "axes."
+            )
+
+        # Create the constraint lines
+        coords_mtx = np.zeros((len(lePtList) * nCon * 4, 3))
+        for i, (lePt, tePt) in enumerate(zip(lePtList, tePtList)):
+            line = Curve(X=np.array([lePt, tePt]), k=2)  # Linear b-spline
+            s = np.linspace(0, 1, nCon)
+            X = line(s)
+            coords = np.zeros((nCon, 2, 3))
+
+            # Project all the points
+            for j in range(nCon):
+                # Project actual node
+                if const_axis:
+                    up, down, fail = geo_utils.projectNode(X[j], axis, p0, p1 - p0, p2 - p0)
+                else:
+                    up, down, fail = geo_utils.projectNode(X[j], axis[i], p0, p1 - p0, p2 - p0)
+
+                if fail > 0:
+                    raise Error(
+                        "There was an error projecting a node "
+                        "at (%f, %f, %f) with normal (%f, %f, %f)."
+                        % (X[j, 0], X[j, 1], X[j, 2], axis[0], axis[1], axis[2])
+                    )
+                coords[j, 0] = up
+                coords[j, 1] = down
+                coords[j, 2] = lePt
+                coords[j, 3] = tePt
+
+            # Add the coordinates to the coordinate matrix
+            coords_mtx[i * nCon * 4 : i + 1 * nCon * 4, :] = coords.reshape((nCon * 4, 3))
+
+        typeName = "thickCon"
+        if typeName not in self.constraints:
+            self.constraints[typeName] = OrderedDict()
+
+        if name is None:
+            conName = f"{self.name}_max_thickness_to_chord_constraints_{len(self.constraints[typeName])}"
+        else:
+            conName = name
+
+        self.constraints[typeName][conName] = KSMaxThicknessToChordConstraint(
+            conName, coords, rho, lower, upper, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
         )
 
     def _checkDVGeo(self, name="default"):
