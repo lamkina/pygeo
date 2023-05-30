@@ -19,7 +19,12 @@ from .gearPostConstraint import GearPostConstraint
 from .locationConstraint import LocationConstraint
 from .planarityConstraint import PlanarityConstraint
 from .radiusConstraint import RadiusConstraint
-from .thicknessConstraint import KSMaxThicknessToChordConstraint, ThicknessConstraint, ThicknessToChordConstraint
+from .thicknessConstraint import (
+    KSMaxThicknessToChordConstraint,
+    TECloseoutConstraint,
+    ThicknessConstraint,
+    ThicknessToChordConstraint,
+)
 from .volumeConstraint import CompositeVolumeConstraint, TriangulatedVolumeConstraint, VolumeConstraint
 
 
@@ -3309,6 +3314,8 @@ class DVConstraints:
         pctChord=0.9,
         nCon=10,
         slope=0.1,
+        scaled=False,
+        scale=1.0,
         name=None,
         addToPyOpt=True,
         surfaceName="default",
@@ -3355,7 +3362,9 @@ class DVConstraints:
         else:
             conName = name
 
-        self.constraints[typeName][conName] = None
+        self.constraints[typeName][conName] = TECloseoutConstraint(
+            conName, coords, slope, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
+        )
 
     def _checkDVGeo(self, name="default"):
         """check if DVGeo exists"""
