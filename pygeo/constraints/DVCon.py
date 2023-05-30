@@ -3301,6 +3301,62 @@ class DVConstraints:
             conName, coords, rho, lower, upper, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
         )
 
+    def addTECloseoutConstraint(
+        self,
+        lePt,
+        tePt,
+        axis,
+        pctChord=0.9,
+        nCon=10,
+        slope=0.1,
+        name=None,
+        addToPyOpt=True,
+        surfaceName="default",
+        DVGeoName="default",
+        compNames=None,
+    ):
+        self._checkDVGeo(DVGeoName)
+
+        p0, p1, p2 = self._getSurfaceVertices(surfaceName=surfaceName)
+
+        # Initialize the coordinates
+        coords = np.zeros((nCon * 4, 3))
+
+        # Compute the vector representing the chord from the LE to TE
+        chordVec = tePt - lePt
+        xStart = pctChord * chordVec  # starting point for the toothpicks
+
+        # Create the constraint lines
+        line = Curve(X=np.array([xStart, tePt]), k=2)  # Linear b-spline
+        s = np.linspace(0, 1, nCon)  # parameteric points
+        X = line(s)  # Evaluate the parameteric points on the b-spline
+
+        # Loop over constraints and project to get the toothpicks
+        for i in range(nCon):
+            up, down, fail = geo_utils.projectNode(X[i], axis, p0, p1 - p0, p2 - p0)
+
+            if fail > 0:
+                raise Error(
+                    "There was an error projecting a node "
+                    "at (%f, %f, %f) with normal (%f, %f, %f)." % (X[i, 0], X[i, 1], X[i, 2], axis[0], axis[1], axis[2])
+                )
+
+            coords[i, 0] = up
+            coords[i, 1] = down
+            coords[i, 2] = lePt
+            coords[i, 3] = tePt
+
+        typeName = "thickCon"
+        if typeName not in self.constraints:
+            self.constraints[typeName] = OrderedDict()
+
+        if name is None:
+            conName = f"{self.name}_te_closeout_thickness_constraints_{len(self.constraints[typeName])}"
+        else:
+            conName = name
+
+        self.constraints[typeName][conName] = None
+
     def _checkDVGeo(self, name="default"):
         """check if DVGeo exists"""
         if name not in self.DVGeometries.keys():
