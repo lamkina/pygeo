@@ -3357,7 +3357,7 @@ class DVConstraints:
         ptList : list or array of size (N x 3) where N >=2
             The list of points forming a poly-line along which the
             thickness constraints will be added.
-        
+
         tePt : list or array of size (1 x 3)
             A single point on the trailing edge.
 
