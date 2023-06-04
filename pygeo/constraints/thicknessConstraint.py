@@ -480,17 +480,19 @@ class KSMaxThicknessToChordFullConstraint(GeometricConstraint):
         handle.write(f"{len(self.coords)+1} {len(self.coords)+2}\n")
 
 
-class TECloseoutConstraint(GeometricConstraint):
-    def __init__(self, name, coords, slope, scale, DVGeo, addToPyOpt, compNames):
+class TESlopeConstraint(GeometricConstraint):
+    def __init__(self, name, coords, lower, upper, scaled, scale, DVGeo, addToPyOpt, compNames):
         nCon = (len(coords) - 1) // 2  # Divide the length of the coordinates by 4 to get the number of constraints
-        lower = 0.0
-        upper = slope
         super().__init__(name, nCon, lower, upper, scale, DVGeo, addToPyOpt)
 
         self.coords = coords
+        self.scaled = scaled
 
         # Embed the coordinates
         self.DVGeo.addPointSet(self.coords, self.name, compNames=compNames)
+
+        # Compute the initial constraints
+        self.teSlope0 = self._compute(self.coords, scaled=False)
 
     def evalFunctions(self, funcs, config):
         """
@@ -505,9 +507,9 @@ class TECloseoutConstraint(GeometricConstraint):
         self.coords = self.DVGeo.update(self.name, config=config)
 
         # Compute the constraints
-        teClose = self._compute(self.coords)
+        teSlope = self._compute(self.coords, scaled=self.scaled)
 
-        funcs[self.name] = teClose
+        funcs[self.name] = teSlope
 
     def evalFunctionsSens(self, funcsSens, config):
         """
@@ -526,7 +528,7 @@ class TECloseoutConstraint(GeometricConstraint):
         if nDV > 0:
             nCoords = self.coords.shape[0]
             dimCoords = self.coords.shape[1]
-            dTeClosedPt = np.zeros((self.nCon, nCoords, dimCoords))
+            dTeSlopePt = np.zeros((self.nCon, nCoords, dimCoords))
 
             coords = self.coords.astype("D")
             for i in range(nCoords):  # loop over the points
@@ -535,15 +537,15 @@ class TECloseoutConstraint(GeometricConstraint):
                     coords[i, j] += step_imag
 
                     # evaluate the constraint
-                    conVal = self._compute(coords)
-                    dTeClosedPt[:, i, j] = conVal.imag / step_real
+                    conVal = self._compute(coords, scaled=self.scaled)
+                    dTeSlopePt[:, i, j] = conVal.imag / step_real
 
                     # reset the coordinates
                     coords[i, j] -= step_imag
 
-            funcsSens[self.name] = self.DVGeo.totalSensitivity(dTeClosedPt, self.name, config=config)
+            funcsSens[self.name] = self.DVGeo.totalSensitivity(dTeSlopePt, self.name, config=config)
 
-    def _compute(self, coords):
+    def _compute(self, coords, scaled=False):
         """Abstracted method to compute the closeout constraint.
 
         Parameters
@@ -578,10 +580,13 @@ class TECloseoutConstraint(GeometricConstraint):
         c = np.flip(np.cumsum(chords))
 
         # Divide the thicknessess by the chord arc lengths
-        teClose = t / c
+        teSlope = t / c
+
+        if scaled:
+            teSlope /= self.teSlope0
 
         # Return the constraint array
-        return teClose
+        return teSlope
 
     def writeTecplot(self, handle):
         """

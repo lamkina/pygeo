@@ -22,7 +22,7 @@ from .radiusConstraint import RadiusConstraint
 from .thicknessConstraint import (
     KSMaxThicknessToChordFullConstraint,
     KSMaxThicknessToChordRelativeConstraint,
-    TECloseoutConstraint,
+    TESlopeConstraint,
     ThicknessConstraint,
     ThicknessToChordConstraint,
 )
@@ -3304,13 +3304,17 @@ class DVConstraints:
                 conName, coords, rho, lower, upper, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
             )
 
-    def addTECloseoutConstraint(
+    def addTESlopeConstraint(
         self,
-        ptList,
+        lePt,
         tePt,
         axis,
+        pctChordStart=0.9,
+        pctChordEnd=0.99,
         nCon=10,
-        slope=0.1,
+        lower=1.0,
+        upper=3.0,
+        scaled=True,
         scale=1.0,
         name=None,
         addToPyOpt=True,
@@ -3414,8 +3418,14 @@ class DVConstraints:
         # Initialize the coordinates
         coords = np.zeros((nCon * 2 + 1, 3))
 
+        lePt = np.array(lePt)
+        tePt = np.array(tePt)
+
+        ptStart = lePt + pctChordStart * (tePt - lePt)
+        ptEnd = lePt + pctChordEnd * (tePt - lePt)
+
         # Create the constraint lines
-        line = Curve(X=ptList, k=2)  # Linear b-spline
+        line = Curve(X=np.array([ptStart, ptEnd]), k=2)  # Linear b-spline
         s = np.linspace(0, 1, nCon)  # parameteric points
         X = line(s)  # Evaluate the parameteric points on the b-spline
 
@@ -3440,12 +3450,12 @@ class DVConstraints:
             self.constraints[typeName] = OrderedDict()
 
         if name is None:
-            conName = f"{self.name}_te_closeout_thickness_constraints_{len(self.constraints[typeName])}"
+            conName = f"{self.name}_te_slope_constraints_{len(self.constraints[typeName])}"
         else:
             conName = name
 
-        self.constraints[typeName][conName] = TECloseoutConstraint(
-            conName, coords, slope, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
+        self.constraints[typeName][conName] = TESlopeConstraint(
+            conName, coords, lower, upper, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
         )
 
     def _checkDVGeo(self, name="default"):
