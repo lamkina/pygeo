@@ -90,6 +90,7 @@ def generic_test_base(DVGeo, DVCon, handler, checkDerivs=True, fdstep=1e-4):
     handler.root_add_dict("funcs_base", funcs, rtol=1e-6, atol=1e-6)
     funcsSens = {}
     DVCon.evalFunctionsSens(funcsSens, includeLinear=True)
+
     # regress the derivatives
     if checkDerivs:
         handler.root_add_dict("derivs_base", funcsSens, rtol=1e-6, atol=1e-6)
@@ -519,6 +520,61 @@ class RegTestPyGeo(unittest.TestCase):
             handler.assert_allclose(
                 funcs["DVCon1_thickness_to_chord_constraints_0"],
                 np.ones(10),
+                name="toverc_twisted",
+                rtol=1e-3,
+                atol=1e-3,
+            )
+
+            funcs, funcsSens = self.wing_test_deformed(DVGeo, DVCon, handler)
+
+    def test_teCloseout(self, train=False, refDeriv=False):
+        refFile = os.path.join(self.base_path, "ref/test_DVConstraints_teCloseout.ref")
+        with BaseRegTest(refFile, train=train) as handler:
+            DVGeo, DVCon = self.generate_dvgeo_dvcon("box")
+
+            ptList = [[0.0, 0.0, 1.5], [0.0, 0.0, 0.1]]
+            tePt = [0.0, 0.0, 0.0]
+            DVCon.addTECloseoutConstraint(ptList, tePt, axis=[0, 1, 0], nCon=10)
+
+            funcs, funcsSens = generic_test_base(DVGeo, DVCon, handler)
+            handler.assert_allclose(
+                funcs["DVCon1_te_closeout_thickness_constraints_0"],
+                np.array(
+                    [
+                        0.66666667,
+                        0.74380165,
+                        0.8411215,
+                        0.96774194,
+                        1.13924051,
+                        1.38461538,
+                        1.76470588,
+                        2.43243243,
+                        3.91304348,
+                        10.0,
+                    ]
+                ),
+                name="teCloseout_base",
+                rtol=1e-7,
+                atol=1e-7,
+            )
+
+            funcs, funcsSens = self.wing_test_twist(DVGeo, DVCon, handler)
+            handler.assert_allclose(
+                funcs["DVCon1_te_closeout_thickness_constraints_0"],
+                np.array(
+                    [
+                        0.66666667,
+                        0.74380165,
+                        0.8411215,
+                        0.96774194,
+                        1.13924051,
+                        1.38461538,
+                        1.76470588,
+                        2.43243243,
+                        3.91304348,
+                        10.0,
+                    ]
+                ),
                 name="toverc_twisted",
                 rtol=1e-3,
                 atol=1e-3,

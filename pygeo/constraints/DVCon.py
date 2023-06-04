@@ -20,7 +20,8 @@ from .locationConstraint import LocationConstraint
 from .planarityConstraint import PlanarityConstraint
 from .radiusConstraint import RadiusConstraint
 from .thicknessConstraint import (
-    KSMaxThicknessToChordConstraint,
+    KSMaxThicknessToChordFullConstraint,
+    KSMaxThicknessToChordRelativeConstraint,
     TECloseoutConstraint,
     ThicknessConstraint,
     ThicknessToChordConstraint,
@@ -1348,7 +1349,7 @@ class DVConstraints:
             # Fourth point is along the chordDir
             coords[i, 3] = coords[i, 2] + 0.1 * height * chordDir
 
-        # Create the thickness constraint object:
+        # Create the thickness constraint object
         coords = coords.reshape((nCon * 4, 3))
 
         typeName = "thickCon"
@@ -3212,10 +3213,11 @@ class DVConstraints:
 
     def addKSMaxThicknessToChordConstraint(
         self,
-        lePtList,
-        tePtList,
+        lePt,
+        tePt,
         nCon,
         axis,
+        chordDir=None,
         rho=100.0,
         lower=1.0,
         upper=3.0,
@@ -3223,6 +3225,7 @@ class DVConstraints:
         scaled=False,
         name=None,
         addToPyOpt=True,
+        conType="full_chord",
         surfaceName="default",
         DVGeoName="default",
         compNames=None,
@@ -3231,67 +3234,46 @@ class DVConstraints:
 
         p0, p1, p2 = self._getSurfaceVertices(surfaceName=surfaceName)
 
-        # Check the input point lists
-        if len(lePtList) != len(tePtList):
-            raise Error(
-                "LE and TE point lists must be the same length. "
-                f"TE length: {len(tePtList)}, LE length: {len(lePtList)}"
-            )
-
-        # Check the axis type and length
-        const_axis = True
-        if isinstance(axis, (list, np.ndarray)):
-            if isinstance(axis[0], (float, int)):
-                if len(axis) != 3:
-                    raise ValueError("Constant axis for all points must have a length of 3 for x, y, and z directions.")
-            elif isinstance(axis[0], (list, np.ndarray)):
-                const_axis = False
-                if any(not isinstance(a, (float, int)) for a in axis[0]):
-                    raise ValueError(
-                        "If providing an axis for multiple constraint lines, 'axis' must be "
-                        "2-dimensional with shape nLePts x 3."
-                    )
-                if len(axis) != len(lePtList):
-                    raise ValueError(
-                        "Separate axis for each constraint line detected, but length of 'axis' "
-                        "is different than length of 'lePtList'."
-                    )
-            else:
-                raise TypeError("Invalid format for 'axis'.")
+        # Initialize the coordinates
+        if conType == "full_chord":
+            coords = np.zeros((nCon, 2, 3))
+        elif conType == "relative_chord":
+            coords = np.zeros((nCon, 4, 3))
         else:
-            raise TypeError(
-                "Argument 'axis' must be a single list or array representing a constant axis or multiple " "axes."
-            )
+            raise Error(f"conType {conType} is not supported.")
 
         # Create the constraint lines
-        coords_mtx = np.zeros((len(lePtList) * nCon * 4, 3))
-        for i, (lePt, tePt) in enumerate(zip(lePtList, tePtList)):
-            line = Curve(X=np.array([lePt, tePt]), k=2)  # Linear b-spline
-            s = np.linspace(0, 1, nCon)
-            X = line(s)
-            coords = np.zeros((nCon, 2, 3))
+        line = Curve(X=np.array([lePt, tePt]), k=2)  # Linear b-spline
+        s = np.linspace(0, 1, nCon)
+        X = line(s)
 
-            # Project all the points
-            for j in range(nCon):
-                # Project actual node
-                if const_axis:
-                    up, down, fail = geo_utils.projectNode(X[j], axis, p0, p1 - p0, p2 - p0)
-                else:
-                    up, down, fail = geo_utils.projectNode(X[j], axis[i], p0, p1 - p0, p2 - p0)
+        # Project all the points
+        for i in range(nCon):
+            # Project actual node
+            up, down, fail = geo_utils.projectNode(X[i], axis, p0, p1 - p0, p2 - p0)
 
-                if fail > 0:
-                    raise Error(
-                        "There was an error projecting a node "
-                        "at (%f, %f, %f) with normal (%f, %f, %f)."
-                        % (X[j, 0], X[j, 1], X[j, 2], axis[0], axis[1], axis[2])
-                    )
-                coords[j, 0] = up
-                coords[j, 1] = down
-                coords[j, 2] = lePt
-                coords[j, 3] = tePt
+            if fail > 0:
+                raise Error(
+                    "There was an error projecting a node "
+                    "at (%f, %f, %f) with normal (%f, %f, %f)." % (X[i, 0], X[i, 1], X[i, 2], axis[0], axis[1], axis[2])
+                )
 
-            # Add the coordinates to the coordinate matrix
-            coords_mtx[i * nCon * 4 : i + 1 * nCon * 4, :] = coords.reshape((nCon * 4, 3))
+            coords[i, 0] = up
+            coords[i, 1] = down
+
+            if conType == "relative_chord":
+                if chordDir is None:
+                    raise Error("Chord direction must be set when using conType 'relative_chord'")
+
+                height = np.linalg.norm(coords[i, 0] - coords[i, 1])
+                coords[i, 2] = 0.5 * (up + down)
+                coords[i, 3] = coords[i, 2] + 0.1 * height * chordDir
+
+        # Add the coordinates to the coordinate matrix
+        if conType == "full_chord":
+            coords = coords.reshape((nCon * 2, 3))
+        elif conType == "relative_chord":
+            coords = coords.reshape((nCon * 4, 3))
 
         typeName = "thickCon"
         if typeName not in self.constraints:
@@ -3302,19 +3284,33 @@ class DVConstraints:
         else:
             conName = name
 
-        self.constraints[typeName][conName] = KSMaxThicknessToChordConstraint(
-            conName, coords, rho, lower, upper, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
-        )
+        if conType == "full_chord":
+            self.constraints[typeName][conName] = KSMaxThicknessToChordFullConstraint(
+                conName,
+                coords,
+                lePt,
+                tePt,
+                rho,
+                lower,
+                upper,
+                scaled,
+                scale,
+                self.DVGeometries[DVGeoName],
+                addToPyOpt,
+                compNames,
+            )
+        elif conType == "relative_chord":
+            self.constraints[typeName][conName] = KSMaxThicknessToChordRelativeConstraint(
+                conName, coords, rho, lower, upper, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
+            )
 
     def addTECloseoutConstraint(
         self,
-        lePt,
+        ptList,
         tePt,
         axis,
-        pctChord=0.9,
         nCon=10,
         slope=0.1,
-        scaled=False,
         scale=1.0,
         name=None,
         addToPyOpt=True,
@@ -3322,19 +3318,104 @@ class DVConstraints:
         DVGeoName="default",
         compNames=None,
     ):
+        r"""
+        Add a set of trailing edge closeout constraints oriented along a poly-line.
+
+        This is a specialized constraint that controls the slope of an
+        airfoil section near the trailing edge.  First, 1D thickness
+        constraints are added along a polyline specified by the argument
+        ptList.  Next, the cumulative arc along the chord line is computed
+        for each thickness constraint.  Finally, each thickness is
+        divided by the cumulative chord length.  The result is a linear
+        relationship between the thickness and the distance of the
+        thickness consraint from the trailing edge.  The slope argument
+        sets the minimum allowable closeout rise/run for the trailing
+        edge region.
+
+        See below for a schematic
+
+        .. code-block:: text
+
+          Planform view of the wing: The '+' are the (three dimensional)
+          points that are supplied in ptList:
+
+          Physical extent of wing
+                                   \
+          __________________________\_________
+          |                  +               |
+          |                -/                |
+          |                /                 |
+          | +-------+-----+                  |
+          |              4-points defining   |
+          |              poly-line           |
+          |                                  |
+          |__________________________________/
+
+
+        Parameters
+        ----------
+        ptList : list or array of size (N x 3) where N >=2
+            The list of points forming a poly-line along which the
+            thickness constraints will be added.
+        
+        tePt : list or array of size (1 x 3)
+            A single point on the trailing edge.
+
+        axis : list or array of length 3
+            The direction along which the projections will occur.
+            Typically this will be y or z axis ([0,1,0] or [0,0,1])
+
+        nCon : int
+            The number of thickness to chord ratio constraints to add,
+            by default 10.
+
+        slope : float
+            This is the slope of the TE closeout constraints added
+            along the polying specified by ptList.  The slope is used
+            as the lower bound for the constraint and represents
+            approximately the minimum rise/run.
+
+        scale : float or array of size nCon
+            This is the optimization scaling of the
+            constraint. Typically this parameter will not need to be
+            changed. If the thickness constraints are scaled, this
+            already results in well-scaled constraint values, and
+            scale can be left at 1.0. If scaled=False, it may changed
+            to a more suitable value of the resulting physical
+            thickness have magnitudes vastly different than O(1).
+
+        name : str
+            Normally this does not need to be set. Only use this if
+            you have multiple DVCon objects and the constraint names
+            need to be distinguished **or** you are using this set of
+            thickness constraints for something other than a direct
+            constraint in pyOptSparse.
+
+        addToPyOpt : bool
+            Normally this should be left at the default of True. If
+            the values need to be processed (modified) *before* they are
+            given to the optimizer, set this flag to False.
+
+        DVGeoName : str
+            Name of the DVGeo object to compute the constraint with. You only
+            need to set this if you're using multiple DVGeo objects
+            for a problem. For backward compatibility, the name is 'default' by default
+
+        compNames : list
+            If using DVGeometryMulti, the components to which the point set associated
+            with this constraint should be added.
+            If None, the point set is added to all components.
+
+        """
         self._checkDVGeo(DVGeoName)
 
         p0, p1, p2 = self._getSurfaceVertices(surfaceName=surfaceName)
 
         # Initialize the coordinates
-        coords = np.zeros((nCon * 4, 3))
-
-        # Compute the vector representing the chord from the LE to TE
-        chordVec = tePt - lePt
-        xStart = pctChord * chordVec  # starting point for the toothpicks
+        coords = np.zeros((nCon * 2 + 1, 3))
 
         # Create the constraint lines
-        line = Curve(X=np.array([xStart, tePt]), k=2)  # Linear b-spline
+        line = Curve(X=ptList, k=2)  # Linear b-spline
         s = np.linspace(0, 1, nCon)  # parameteric points
         X = line(s)  # Evaluate the parameteric points on the b-spline
 
@@ -3348,10 +3429,11 @@ class DVConstraints:
                     "at (%f, %f, %f) with normal (%f, %f, %f)." % (X[i, 0], X[i, 1], X[i, 2], axis[0], axis[1], axis[2])
                 )
 
-            coords[i, 0] = up
-            coords[i, 1] = down
-            coords[i, 2] = lePt
-            coords[i, 3] = tePt
+            coords[2 * i] = up
+            coords[2 * i + 1] = down
+
+        # Add the trailing edge point to the end of the coordinate array
+        coords[-1] = tePt
 
         typeName = "thickCon"
         if typeName not in self.constraints:
@@ -3363,7 +3445,7 @@ class DVConstraints:
             conName = name
 
         self.constraints[typeName][conName] = TECloseoutConstraint(
-            conName, coords, slope, scaled, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
+            conName, coords, slope, scale, self.DVGeometries[DVGeoName], addToPyOpt, compNames
         )
 
     def _checkDVGeo(self, name="default"):
