@@ -3217,15 +3217,15 @@ class DVConstraints:
         tePt,
         nCon,
         axis,
+        conType="full_chord",
         chordDir=None,
-        rho=100.0,
+        rho=1000.0,
         lower=1.0,
         upper=3.0,
         scale=1.0,
         scaled=False,
         name=None,
         addToPyOpt=True,
-        conType="full_chord",
         surfaceName="default",
         DVGeoName="default",
         compNames=None,
@@ -3265,6 +3265,7 @@ class DVConstraints:
                 if chordDir is None:
                     raise Error("Chord direction must be set when using conType 'relative_chord'")
 
+                chordDir = np.array(chordDir)
                 height = np.linalg.norm(coords[i, 0] - coords[i, 1])
                 coords[i, 2] = 0.5 * (up + down)
                 coords[i, 3] = coords[i, 2] + 0.1 * height * chordDir
@@ -3280,7 +3281,7 @@ class DVConstraints:
             self.constraints[typeName] = OrderedDict()
 
         if name is None:
-            conName = f"{self.name}_max_thickness_to_chord_constraints_{len(self.constraints[typeName])}"
+            conName = f"{self.name}_ksmax_thickness_to_chord_constraints_{len(self.constraints[typeName])}"
         else:
             conName = name
 
@@ -3288,8 +3289,8 @@ class DVConstraints:
             self.constraints[typeName][conName] = KSMaxThicknessToChordFullConstraint(
                 conName,
                 coords,
-                lePt,
-                tePt,
+                np.array(lePt),
+                np.array(tePt),
                 rho,
                 lower,
                 upper,

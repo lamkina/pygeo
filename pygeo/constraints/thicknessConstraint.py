@@ -275,28 +275,12 @@ class KSMaxThicknessToChordRelativeConstraint(GeometricConstraint):
         to the open file handle
         """
         handle.write("Zone T=%s\n" % self.name)
-        handle.write(
-            'Variables =  "CoordinateX CoordinateY CoordinateZ Thickness ThicknessToChord NormalizedThicknessToChord"'
-        )
         handle.write("Nodes = %d, Elements = %d ZONETYPE=FELINESEG\n" % (len(self.coords), len(self.coords) // 2))
         handle.write("DATAPACKING=POINT\n")
 
-        # Loop over the cons and compute the varialbes
-        t = np.zeros(self.nCon)
-        ToC = np.zeros(self.nCon)
-        ToCNormalized = np.zeros(self.nCon)
-        for i in range(self.nCon):
-            t[i] = geo_utils.eDist(self.coords[4 * i], self.coords[4 * i + 1])
-            c = geo_utils.eDist(self.coords[4 * i + 2], self.coords[4 * i + 3])
-            ToC[i] = t[i] / c
-            ToCNormalized[i] = ToC[i] / self.ToC0[i]
-
         # Write the coordinates and variables
         for i in range(len(self.coords)):
-            iCon = i // 4
-            handle.write(
-                f"{self.coords[i, 0]:f} {self.coords[i, 1]:f} {self.coords[i, 2]:f} {t[iCon]:f} {ToC[iCon]:f} {ToCNormalized[iCon]:f}\n"
-            )
+            handle.write(f"{self.coords[i, 0]:f} {self.coords[i, 1]:f} {self.coords[i, 2]:f}\n")
 
         # Write the FE line segment indices
         for i in range(len(self.coords) // 2):
@@ -427,15 +411,14 @@ class KSMaxThicknessToChordFullConstraint(GeometricConstraint):
             dKSdCoords = np.einsum("ij,ijk->jk", dKSdToC.T, dToCdCoords)
             dKSdLeTePts = np.einsum("ij,ijk->jk", dKSdToC.T, dToCdLeTePts)
 
-            # Derivatives of KSmax(t/c) w.r.t up/down points
-            funcsSens[f"{self.name}_coords"] = self.DVGeo.totalSensitivity(
-                dKSdCoords, f"{self.name}_coords", config=config
-            )
+            tmp0 = self.DVGeo.totalSensitivity(dKSdCoords, f"{self.name}_coords", config=config)
+            tmp1 = self.DVGeo.totalSensitivity(dKSdLeTePts, f"{self.name}_lete", config=config)
 
-            # Derivatives of KSmax(t/c) w.r.t le/te points
-            funcsSens[f"{self.name}_lete"] = self.DVGeo.totalSensitivity(
-                dKSdLeTePts, f"{self.name}_lete", config=config
-            )
+            tmpTotal = {}
+            for key in tmp0:
+                tmpTotal[key] = tmp0[key] + tmp1[key]
+
+            funcsSens[self.name] = tmpTotal
 
     def writeTecplot(self, handle):
         """
@@ -444,29 +427,13 @@ class KSMaxThicknessToChordFullConstraint(GeometricConstraint):
         """
         handle.write("Zone T=%s\n" % self.name)
         handle.write(
-            'Variables =  "CoordinateX CoordinateY CoordinateZ Thickness ThicknessToChord NormalizedThicknessToChord"'
-        )
-        handle.write(
             "Nodes = %d, Elements = %d ZONETYPE=FELINESEG\n" % (len(self.coords) + 2, (len(self.coords) // 2) + 1)
         )
         handle.write("DATAPACKING=POINT\n")
 
-        # Loop over the coordinates and compute the variables
-        t = np.zeros(self.nCon)
-        ToC = np.zeros(self.nCon)
-        ToCNormalized = np.zeros(self.nCon)
-        for i in range(self.nCon):
-            t[i] = geo_utils.eDist(self.coords[2 * i], self.coords[2 * i + 1])
-            c = geo_utils.eDist(self.leTePts[0], self.leTePts[1])
-            ToC[i] = t[i] / c
-            ToCNormalized[i] = ToC[i] / self.ToC0[i]
-
         # Write the coordinates and variables for the toothpicks
         for i in range(len(self.coords)):
-            iCon = i // 2
-            handle.write(
-                f"{self.coords[i, 0]:f} {self.coords[i, 1]:f} {self.coords[i, 2]:f} {t[iCon]:f} {ToC[iCon]:f} {ToCNormalized[iCon]:f}\n"
-            )
+            handle.write(f"{self.coords[i, 0]:f} {self.coords[i, 1]:f} {self.coords[i, 2]:f}\n")
 
         # Write the coordinates for the chord from LE to TE
         handle.write(f"{self.leTePts[0, 0]:f} {self.leTePts[0, 1]:f} {self.leTePts[0, 2]:f} {0.0:f} {0.0:f} {0.0:f}\n")
