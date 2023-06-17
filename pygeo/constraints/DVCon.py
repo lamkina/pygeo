@@ -3230,6 +3230,103 @@ class DVConstraints:
         DVGeoName="default",
         compNames=None,
     ):
+        r"""Add an aggregated KS max constraint over a set of thickness
+        over chord toothpick constraints.
+
+        This constraint uses a KS function to approximate a differentiable
+        maximum over a set of t/c constraints.  The t/c is computed in
+        two different ways.
+
+        1) ``conType="full_chord"``: The length of each toothpick is
+           divided by the length of a linearly approximated chord line from
+           the leading to trailing edge points.
+
+        2) ``conType="relative_chord"``: The length of each toothpick is
+           divided by the length of a projected vector in the chord
+           direction, as specified by ``chordDir``.  The underlying t/c values
+           are computed in the same fashion as the ``addThicknessToChordConstraints1D``
+           method.
+
+        Parameters
+        ----------
+        lePt : list or array of size (1 x 3)
+            A singe point on the leading edge.
+
+        tePt : list or array of size (1 x 3)
+            A single point on the trailing edge.
+
+        nCon : int
+            The number of 1D toothpick constraints to add between the
+            lePt and tePt.
+
+        axis : list or array of length 3
+            The direction along which the projections will occur.
+            Typically this will be y or z axis ([0,1,0] or [0,0,1])
+
+        conType : str, optional
+            The type of underlying t/c constraint (See description above),
+            by default "full_chord"
+
+        chordDir : list or np.ndarray, optional
+            A vector defining the chord direction. This is only used
+            if ``conType="relative_chord"``, by default None
+
+        rho : float, optional
+            The KS coefficient that controls the accuracy of the maximum
+            calculation.  Smaller values will give more conservative
+            esitmates and larger values will more closely approximate
+            the maximum, by default 1000.0
+
+        lower : float, optional
+            The lower bound, by default 1.0
+
+        upper : float, optional
+            The upper bound, by default 3.0
+
+        scale : float or array of size nCon
+            This is the optimization scaling of the
+            constraint. Typically this parameter will not need to be
+            changed. If the thickness constraints are scaled, this
+            already results in well-scaled constraint values, and
+            scale can be left at 1.0. If scaled=False, it may changed
+            to a more suitable value of the resulting physical
+            thickness have magnitudes vastly different than O(1).
+
+        scaled : bool
+            Flag specifying whether or not the constraint is to be
+            implemented in a scaled fashion or not.
+
+            * scaled=True: The initial t/c of each slope
+              constraint is defined to be 1.0. In this case, the lower
+              and upper bounds are given in multiple of the initial
+              location. lower=0.85, upper=1.15, would allow for 15%
+              change in each direction from the original slope.
+
+            * scaled=False: No scaling is applied and the absolute t/c
+              should be used for lower and upper bounds.
+
+        name : str
+            Normally this does not need to be set. Only use this if
+            you have multiple DVCon objects and the constraint names
+            need to be distinguished **or** you are using this set of
+            thickness constraints for something other than a direct
+            constraint in pyOptSparse.
+
+        addToPyOpt : bool
+            Normally this should be left at the default of True. If
+            the values need to be processed (modified) *before* they are
+            given to the optimizer, set this flag to False.
+
+        DVGeoName : str
+            Name of the DVGeo object to compute the constraint with. You only
+            need to set this if you're using multiple DVGeo objects
+            for a problem. For backward compatibility, the name is 'default' by default
+
+        compNames : list
+            If using DVGeometryMulti, the components to which the point set associated
+            with this constraint should be added, by default None. If
+            None, the point set is added to all components.
+        """
         self._checkDVGeo(DVGeoName)
 
         p0, p1, p2 = self._getSurfaceVertices(surfaceName=surfaceName)
@@ -3324,7 +3421,8 @@ class DVConstraints:
         compNames=None,
     ):
         r"""
-        Add a set of trailing edge closeout constraints oriented along a poly-line.
+        Add a set of trailing edge slope constraints oriented along a
+        poly-line.
 
         This is a specialized constraint that controls the slope of an
         airfoil section near the trailing edge.  First, 1D thickness
@@ -3333,35 +3431,12 @@ class DVConstraints:
         for each thickness constraint.  Finally, each thickness is
         divided by the cumulative chord length.  The result is a linear
         relationship between the thickness and the distance of the
-        thickness consraint from the trailing edge.  The slope argument
-        sets the minimum allowable closeout rise/run for the trailing
-        edge region.
-
-        See below for a schematic
-
-        .. code-block:: text
-
-          Planform view of the wing: The '+' are the (three dimensional)
-          points that are supplied in ptList:
-
-          Physical extent of wing
-                                   \
-          __________________________\_________
-          |                  +               |
-          |                -/                |
-          |                /                 |
-          | +-------+-----+                  |
-          |              4-points defining   |
-          |              poly-line           |
-          |                                  |
-          |__________________________________/
-
+        thickness consraint from the trailing edge.
 
         Parameters
         ----------
-        ptList : list or array of size (N x 3) where N >=2
-            The list of points forming a poly-line along which the
-            thickness constraints will be added.
+        lePt : list or array of size (1 x 3)
+            A singe point on the leading edge.
 
         tePt : list or array of size (1 x 3)
             A single point on the trailing edge.
@@ -3370,15 +3445,40 @@ class DVConstraints:
             The direction along which the projections will occur.
             Typically this will be y or z axis ([0,1,0] or [0,0,1])
 
+        pctChordStart : float
+            The normalized chord value for the start of the slope
+            constraints, by default 0.9
+
+        pctChordEnd : float
+            The normalized chord value for the end of the slope
+            constraints, by default 0.99
+
         nCon : int
             The number of thickness to chord ratio constraints to add,
             by default 10.
 
-        slope : float
-            This is the slope of the TE closeout constraints added
-            along the polying specified by ptList.  The slope is used
-            as the lower bound for the constraint and represents
-            approximately the minimum rise/run.
+        lower : float
+            The lower bound for the slope, by default 1.0.  This will
+            be a relative bound if the argument ``scaled=True``,
+            otherwise this will be an absolute bound.
+
+        upper : float
+            The upper bound for the slope, by default 3.0.  This will
+            be a relative bound if the argument ``scaled=True``,
+            otherwise this will be an absolute bound.
+
+        scaled : bool
+            Flag specifying whether or not the constraint is to be
+            implemented in a scaled fashion or not.
+
+            * scaled=True: The initial t/c of each slope
+              constraint is defined to be 1.0. In this case, the lower
+              and upper bounds are given in multiple of the initial
+              location. lower=0.85, upper=1.15, would allow for 15%
+              change in each direction from the original slope.
+
+            * scaled=False: No scaling is applied and the absolute t/c
+              should be used for lower and upper bounds.
 
         scale : float or array of size nCon
             This is the optimization scaling of the
@@ -3408,8 +3508,8 @@ class DVConstraints:
 
         compNames : list
             If using DVGeometryMulti, the components to which the point set associated
-            with this constraint should be added.
-            If None, the point set is added to all components.
+            with this constraint should be added, by default None. If
+            None, the point set is added to all components.
 
         """
         self._checkDVGeo(DVGeoName)
