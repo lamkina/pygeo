@@ -1,4 +1,5 @@
 import openmdao.api as om
+import os
 from .. import DVGeometry, DVConstraints
 
 try:
@@ -19,10 +20,11 @@ import numpy as np
 # class that actually calls the dvgeometry methods
 class OM_DVGEOCOMP(om.ExplicitComponent):
     def initialize(self):
-
         self.options.declare("file", default=None)
         self.options.declare("type", default=None)
         self.options.declare("options", default=None)
+        self.options.declare("output_dir", default="", desc="Output directory for thickness constraint output.")
+        self.options.declare("write_thickness_cons", default=False, desc="Write the thickness constraints to file.")
 
     def setup(self):
         self.geo_type = self.options["type"]
@@ -85,6 +87,17 @@ class OM_DVGEOCOMP(om.ExplicitComponent):
         if comm.rank == 0:
             for constraintname in constraintfunc:
                 outputs[constraintname] = constraintfunc[constraintname]
+
+        # Check the options and output thickness constraints if requested
+        output_dir = self.options["output_dir"]
+        write_thickness = self.options["write_thickness_cons"]
+
+        if write_thickness:
+            if os.path.isdir(output_dir):
+                idx = self.iter_count
+                self.DVCon.writeTecplot(os.path.join(output_dir, f"thickness_constraints_{idx}.dat"))
+            else:
+                raise FileNotFoundError(f"Directory: {output_dir} was not found.")
 
         # we ran a compute so the inputs changed. update the dvcon jac
         # next time the jacvec product routine is called
